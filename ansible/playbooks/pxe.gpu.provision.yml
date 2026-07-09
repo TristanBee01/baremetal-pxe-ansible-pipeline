@@ -1,0 +1,35 @@
+---
+- name: Bare-Metal GPU Provisioning and Validation
+  hosts: new_baremetal_nodes
+  become: yes
+
+  tasks:
+    - name: Ensure NVIDIA drivers are installed via APT
+      apt:
+        name: 
+          - nvidia-driver-535
+          - nvidia-utils-535
+        state: present
+        update_cache: yes
+
+    - name: Validate GPU Inventory (Check for exactly 8 GPUs)
+      shell: nvidia-smi -L | wc -l
+      register: gpu_count
+      failed_when: gpu_count.stdout != "8"
+
+    - name: Format local NVMe drives for vLLM caching
+      filesystem:
+        fstype: ext4
+        dev: /dev/nvme1n1
+
+    - name: Mount NVMe scratch drive
+      mount:
+        path: /scratch/vllm_cache
+        src: /dev/nvme1n1
+        fstype: ext4
+        state: mounted
+
+    - name: Send success webhook to Hypervisor Orchestrator
+      uri:
+        url: "http://control-plane.local/api/v1/nodes/{{ inventory_hostname }}/ready"
+        method: POST
